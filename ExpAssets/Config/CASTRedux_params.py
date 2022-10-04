@@ -77,4 +77,4 @@ fix_interval_mean = 2.0 # sec
 fix_interval_max = 10.0 # sec
 
 feedback_duration = 1.0 # sec
-response_timeout = 1000 # ms
+response_timeout = 1200 # ms
