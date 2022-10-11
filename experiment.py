@@ -431,6 +431,14 @@ class CASTRedux(klibs.Experiment):
             "nonresp_last": nonresp_last,
         }
 
+    
+    def clean_up(self):
+        msg = message("You're all done!  Press any button to exit.", blit_txt=False)
+        fill()
+        blit(msg, 5, P.screen_c)
+        flip()
+        wait_for_input(gamepad=self.gamepad)
+
 
     def init_background_noise(self):
         # Start playback with stereo noise muted & mono noise on low volume
@@ -493,6 +501,7 @@ class CASTRedux(klibs.Experiment):
         )
         wait_msg(msg1, msg2, gamepad=self.gamepad)
         self.init_background_noise()
+
 
     def show_demo_text(self, msgs, stim_set, duration=1.0, wait=True):
         msg_x = int(P.screen_x / 2)
