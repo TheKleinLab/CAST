@@ -58,7 +58,7 @@ dm_show_gaze_dot = True
 # Data Export Settings
 #########################################
 primary_table = "trials"
-unique_identifier = "userhash"
+unique_identifier = "study_id"
 exclude_data_cols = ["created"]
 append_info_cols = ["random_seed"]
 datafile_ext = ".txt"

@@ -7,20 +7,20 @@
     },
     "demographic": [
         {
-            "title": "name",
-            "database_field": "userhash",
-            "query": "What is your full name, banner number or e-mail address?\nYour answer will be encrypted and cannot be read later.",
+            "title": "study_id",
+            "database_field": "study_id",
+            "query": "Please enter the study ID for the participant:",
             "accepted": null,
             "allow_null": false,
             "format": {
-                "type": "str",
+                "type": "int",
                 "styles": "default",
                 "positions": "default",
-                "password": true,
+                "password": false,
                 "range": null,
                 "case_sensitive": true,
                 "accept_as_true": null,
-                "action": "hash"
+                "action": null
             },
             "anonymous_value": "EVAL: now()",
             "active": true
