@@ -13,7 +13,7 @@
             "accepted": null,
             "allow_null": false,
             "format": {
-                "type": "int",
+                "type": "str",
                 "styles": "default",
                 "positions": "default",
                 "password": false,
