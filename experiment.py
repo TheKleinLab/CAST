@@ -503,9 +503,9 @@ class CASTRedux(klibs.Experiment):
         self.init_background_noise()
 
 
-    def show_demo_text(self, msgs, stim_set, duration=1.0, wait=True):
+    def show_demo_text(self, msgs, stim_set, duration=1.0, wait=True, msg_y=None):
         msg_x = int(P.screen_x / 2)
-        msg_y = int(P.screen_y * 0.1)
+        msg_y = int(P.screen_y * 0.1) if msg_y is None else msg_y
         half_space = deg_to_px(0.5)
 
         fill()
@@ -526,6 +526,49 @@ class CASTRedux(klibs.Experiment):
         smart_sleep(duration * 1000)
         if wait:
             wait_for_input(self.gamepad)
+
+    
+    def sound_demo(self):
+        self.init_background_noise()
+        msg1 = message(
+            "Use the following buttons to demo the alerting sounds:", blit_txt=False
+        )
+        msg2 = message(
+            ("(X) - Play the high-intensity noise change\n"
+             "(Y) - Play the same-intensity noise change\n"
+             "(A) - Continue the experiment"),
+            blit_txt=False, align="left"
+        )
+        fill()
+        blit(msg1, 5, (int(P.screen_x / 2), int(P.screen_y * 0.4)))
+        blit(msg2, 8, P.screen_c)
+        flip()
+
+        done = False
+        while not done:
+            if self.gamepad:
+                self.gamepad.update()
+            q = pump(True)
+
+            if button_or_key_pressed(q, "x"):
+                # Demo loud alerting signal
+                self.noise_stereo.volume = 1.0
+                self.noise_mono.volume = 0.0
+                smart_sleep(100)
+                self.noise_mono.volume = 0.1
+                self.noise_stereo.volume = 0.0
+
+            elif button_or_key_pressed(q, "y"):
+                # Demo isointense alerting signal
+                self.noise_stereo.volume = 0.1
+                self.noise_mono.volume = 0.0
+                smart_sleep(100)
+                self.noise_mono.volume = 0.1
+                self.noise_stereo.volume = 0.0
+            
+            elif button_or_key_pressed(q, "a"):
+                done = True
+                break
 
     
     def general_demo(self):
@@ -563,6 +606,7 @@ class CASTRedux(klibs.Experiment):
              "Please put on the headphones now and adjust the volume to a comfortable level."),
             [(self.fixation, P.screen_c)]
         )
+
 
     def exo_demo(self):
 
@@ -615,6 +659,25 @@ class CASTRedux(klibs.Experiment):
         demo_exo_cue()
         self.noise_mono.volume = 0.1
         self.noise_stereo.volume = 0.0
+        self.show_demo_text(
+            ["Instructions complete!",
+             ("Press (X) to repeat the instructions, (B) to hear the alerting sounds\n"
+              "again, or (A) to continue with the experiment.")],
+            [], duration=0.1, wait=False, msg_y=int(P.screen_y * 0.4)
+        )
+        done = False
+        while not done:
+            if self.gamepad:
+                self.gamepad.update()
+            q = pump(True)
+            if button_or_key_pressed(q, "x"):
+                self.exo_demo()
+                done = True
+            elif button_or_key_pressed(q, "b"):
+                self.sound_demo()
+                done = True
+            elif button_or_key_pressed(q, "a"):
+                done = True
 
 
     def endo_demo(self):
@@ -655,6 +718,25 @@ class CASTRedux(klibs.Experiment):
              "This means that you will not be alerted when the fish is about to appear."],
             [(self.warning_square, P.screen_c), (self.arrow_l, P.screen_c)]
         )
+        self.show_demo_text(
+            ["Instructions complete!",
+             ("Press (X) to repeat the instructions, (B) to hear the alerting sounds\n"
+              "again, or (A) to continue with the experiment.")],
+            [], duration=0.1, wait=False, msg_y=int(P.screen_y * 0.4)
+        )
+        done = False
+        while not done:
+            if self.gamepad:
+                self.gamepad.update()
+            q = pump(True)
+            if button_or_key_pressed(q, "x"):
+                self.endo_demo()
+                done = True
+            elif button_or_key_pressed(q, "b"):
+                self.sound_demo()
+                done = True
+            elif button_or_key_pressed(q, "a"):
+                done = True
 
 
 
@@ -688,6 +770,9 @@ class PinkNoise(AudioClip):
         
         return arr.astype(dtype)
 
+
+def button_or_key_pressed(events, key=None):
+    return button_pressed(events, key) or key_pressed(key, queue=events)
 
 
 def wait_for_input(gamepad=None):
