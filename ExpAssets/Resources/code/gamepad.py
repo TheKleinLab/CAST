@@ -352,9 +352,9 @@ def button_pressed(events, button=None, device=None, on_release=False):
     for e in events:
         if e.type not in button_events:
             continue
-        if device != None and e.which != device.instance_id:
+        if device != None and e.cbutton.which != device.instance_id:
             continue
-        if button == None or e.button == button:
+        if button == None or e.cbutton.button == button:
             pressed = True
             break
     
