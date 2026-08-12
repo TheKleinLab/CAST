@@ -16,7 +16,6 @@ from klibs.KLExperiment import TrialException
 from klibs.KLCommunication import message
 from klibs.KLEventInterface import TrialEventTicket as ET
 from klibs.KLResponseCollectors import KeyPressResponse
-from klibs.KLTrialFactory import TrialIterator
 from klibs.KLTime import CountDown
 from klibs.KLAudio import AudioClip
 
@@ -140,7 +139,6 @@ class CASTRedux(klibs.Experiment):
         self.rc.terminate_after = [P.response_timeout, TK_MS] # response period timeout
 
         # Generate blocks of trials based on custom block structure
-        self.blocks, self.block_labels = self.generate_trials()
         self.last_block_type = None
         self.was_practicing = False
         self.block_number = 0
@@ -149,63 +147,7 @@ class CASTRedux(klibs.Experiment):
             self.general_demo()
 
 
-    def generate_trials(self):
-        # Since this experiment needs a specific sequence of blocks with two separate
-        # factor sets, we load in the trial structure from exp_structure.py here and
-        # use it to generate the blocks/trials for the experiment.
-        from exp_structure import structure
-
-        out = []
-        col_pad = {}
-        block_num = 0
-        block_header = "\n=== Block {0} ({1} trials{2}) ===\n"
-
-        block_set = []
-        block_labels = []
-        for block in structure:
-            if block.practice and not P.run_practice_blocks:
-                continue
-            block_labels.append(block.label)
-            tmp = block.get_trials()
-            if P.max_trials_per_block != None:
-                tmp = tmp[:P.max_trials_per_block]
-
-            # This next block is for printing out the generated blocks and trials for
-            # the experiment to a text file for double-checking the custom structure.
-            # It doesn't actually affect the block sequence of the study.
-            factors = block.factors
-            for f in factors:
-                if not f in col_pad.keys():
-                    col_pad[f] = len(f)
-                for level in block._factors._factors[f]:
-                    if len(str(level)) > col_pad[f]:
-                        col_pad[f] = len(str(level))
-            block_num += 1
-            practice = ", practice" if block.practice else ""
-            out.append(block_header.format(block_num, len(tmp), practice))
-            out.append(" ".join([f.ljust(col_pad[f]) for f in factors]))
-            out.append(" ".join(["-" * col_pad[f] for f in factors]))
-            for trial in tmp:
-                out.append(" ".join([str(trial[f]).ljust(col_pad[f]) for f in factors]))
-            out.append("")
-
-            trials = TrialIterator(tmp)
-            trials.practice = block.practice
-            block_set.append(trials)
-
-        P.blocks_per_experiment = len(block_set)
-
-        with open(os.path.join(P.local_dir, "trial_dump.txt"), "w") as f:
-            for line in out:
-                f.write(line + "\n")
-
-        return block_set, block_labels
-
-
     def block(self):
-
-        # Set block label attribute (eventually move into klibs itself)
-        setattr(self, 'block_label', self.block_labels[P.block_number - 1])
 
         # If this is the first block of a subtask, run its demo instructions
         if self.last_block_type != self.block_label:
