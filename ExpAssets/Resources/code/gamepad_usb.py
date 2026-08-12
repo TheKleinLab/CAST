@@ -1,11 +1,15 @@
-import time
 import sdl2
 import sdl2.ext
 
-import py360
-from py360.constants import *
-
 from gamepad import get_controllers, GameController, _get_joystick_info
+
+PYUSB_AVAILABLE = False
+try:
+    import py360
+    PYUSB_AVAILABLE = True
+except ModuleNotFoundError:
+    pass
+from py360.constants import *
 
 
 BUTTON_MAP = {
@@ -37,9 +41,9 @@ AXIS_MAP = {
 
 
 def get_all_controllers():
-    # Try getting SDL2 controllers, fall back to PyUSB if none available
+    # Try getting SDL2 controllers, fall back to PyUSB if available
     connected = get_controllers()
-    if not len(connected):
+    if PYUSB_AVAILABLE and not len(connected):
         connected_usb = py360.get_controllers()
         if len(connected_usb):
             pad = Virtual360Controller(connected_usb[0])
@@ -83,6 +87,7 @@ class Virtual360Controller(GameController):
         for e in events:
             b = BUTTON_MAP[e.name]
             sdl2.SDL_JoystickSetVirtualButton(self._stick, b, e.state)
+            sdl2.SDL_JoystickUpdate()
 
         data = self.usb_pad.get_data()
         for d in data:
@@ -94,3 +99,4 @@ class Virtual360Controller(GameController):
                 if axis in [AXIS_LT, AXIS_RT]:
                     value = int(value * 257) - 32768
                 sdl2.SDL_JoystickSetVirtualAxis(self._stick, a, value)
+            sdl2.SDL_JoystickUpdate()
