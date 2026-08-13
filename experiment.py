@@ -99,18 +99,6 @@ class CASTRedux(klibs.Experiment):
         add_text_style('incorrect', '0.5deg', RED)
         add_text_style('block', '0.5deg', line_space=2.6)
         self.anticipatory_msg = message("Too soon!", 'incorrect')
-            
-        # Initialize feedback messages for practice block
-        timeout_msg = message(
-            "Too slow! Please try to respond more quickly."
-        )
-        incorrect_msg = message(
-            "Incorrect response!\n"
-            "Please pull the trigger on the same side the middle fish is facing.",
-            align='center'
-        )
-        
-        self.feedback_msgs = {'incorrect': incorrect_msg, 'timeout': timeout_msg}
 
         # If connected, try initializing game controller
         gamepad_init()
@@ -135,6 +123,18 @@ class CASTRedux(klibs.Experiment):
                 keymap = {'z': 'left', '/': 'right'},
                 timeout = P.response_timeout / 1000
             )
+
+        # Initialize feedback messages for practice block
+        timeout_msg = message(
+            "Too slow! Please try to respond more quickly."
+        )
+        controls = "pull the trigger" if self.gamepad else "press the key"
+        incorrect_msg = message(
+            "Incorrect response!\n"
+            "Please {} on the same side the middle fish is facing.".format(controls),
+            align='center'
+        )
+        self.feedback_msgs = {'incorrect': incorrect_msg, 'timeout': timeout_msg}
 
         # Generate blocks of trials based on custom block structure
         self.last_block_type = None
@@ -506,12 +506,16 @@ class CASTRedux(klibs.Experiment):
             "On each trial, a fish will appear on the left or right side of the screen.",
             [(self.fixation, P.screen_c), (self.fish_r, self.left_loc)]
         )
+        if self.gamepad:
+            controls_txt = "left and right triggers on the game controller."
+        else:
+            controls_txt = "z (left) and / (right) keys on the keyboard."
         self.show_demo_text(
             ["Sometimes the fish will be alone, sometimes it will be surrounded by friends.",
-             ("Your job will be to identify which way the middle fish is facing, using the\n"
-             "left and right triggers on the game controller.")],
+            ("Your job will be to identify which way the middle fish is facing, using the\n"
+            "{}".format(controls_txt))],
             [(self.fixation, P.screen_c), (self.fish_l, self.right_loc),
-             (self.fish_l, self.right_flanker_locs)]
+            (self.fish_l, self.right_flanker_locs)]
         )
         self.show_demo_text(
             ("Note that sometimes the surrounding fish will be facing a different\n"
