@@ -1,10 +1,7 @@
-import re
 import sdl2
 
-from klibs.KLResponseCollectors import ResponseListener, Response
-
-# NOTE: If this is ever used for collecting joystick data, would need to implement
-# threshold and deadzone to avoid useless oversensitive changes at rest
+from klibs.KLEventQueue import flush
+from klibs.KLResponseListeners import BaseResponseListener
 
 TRIGGER_LEFT = sdl2.SDL_CONTROLLER_AXIS_TRIGGERLEFT
 TRIGGER_RIGHT = sdl2.SDL_CONTROLLER_AXIS_TRIGGERRIGHT
@@ -26,7 +23,7 @@ class TriggerData(object):
         Relative to the onset of the response collection loop.
         
         """
-        return self.time
+        return self._time
 
     @property
     def left(self):
@@ -40,134 +37,116 @@ class TriggerData(object):
 
 
 
-class GamepadResponse(ResponseListener):
+class TriggerListener(BaseResponseListener):
+    """A class for collecting gamepad trigger responses.
 
-    def __init__(self, mapping=None):
+    This response listener allows for three types of responses: left trigger,
+    right trigger, and/or both triggers. Each of these can be mapped to a given response
+    label::
+
+       self.trig_listener = TriggerListener(
+           {'Left': 'left', 'Right': 'right', 'Both': 'double'}
+       )
+    
+    The threshold parameter determines how far the trigger needs to be pressed before a
+    response is registered (e.g. the default threshold of 0.5 means a trigger needs to
+    be pressed at least halfway). When the mapping allows for both triggers
+    simultaneously as a response, the threshold also determines how far apart the
+    triggers need to be in terms of pressure before a left or right response can be
+    registered.
+
+    Args:
+        mapping (dict): A dictionary specifying the trigger responses to check for
+            ('left', 'right', and/or 'both') and their corresponding response labels.
+        gamepad (optional): The GameController object representing the controller to
+            check for responses. If not specified, will listen for responses from all
+            connected controllers.
+        threshold (float, optional): The threshold specifying how far a trigger needs
+            to be pressed to be considered a response (0.1 = pressed 10%, 1.0 = 
+            pressed 100%). Defaults to 0.5.
+        timeout (float, optional): The maximum duration (in seconds) to wait for a
+            valid response. Defaults to None (no timeout).
+        loop_callback (callable, optional): An optional function or method to be
+            called every time the collection loop checks for new input.
+    
+    """
+    def __init__(
+        self, mapping, gamepad=None, threshold=0.5, timeout=None, loop_callback=None
+    ):
         # Fallback mapping for missing controller?
-        super(GamepadResponse, self).__init__("gamepad_listener")
-        self._button_state = {}
-        self._axis_state = {}
+        super(TriggerListener, self).__init__(timeout, loop_callback)
         self._map = {}
-        self._user_map = {}
-        self.pad = None
-        self.record_triggers = False
-        self._raw_trigger_data = []
-        if mapping:
-            self._map = self._parse_mappings(mapping)
-            self._user_map = mapping
+        self._pad = gamepad
+        self._threshold = threshold # between 0 and 1
+        self._lt_state = 0
+        self._rt_state = 0
+        self._raw_data = []
+        # Parse and initialize the mapping of buttons/axes to responses
+        for resp, label in mapping.items():
+            resp_cleaned = resp.split(" ")[0].lower()
+            if not resp_cleaned in ['left', 'right', 'both']:
+                e = "'{}' is not a valid trigger response type."
+                raise ValueError(e.format(resp))
+            self._map[resp_cleaned] = label
 
-    def _get_axis(self, name_raw):
-        name = re.sub(r"[\s_-]", "", name_raw).lower()
-        axis = sdl2.SDL_GameControllerGetAxisFromString(name.encode('utf-8'))
-        if axis == sdl2.SDL_CONTROLLER_AXIS_INVALID:
-            print(name)
-            raise ValueError("Invalid axis name '{0}'.".format(name_raw))
-        return axis
-
-    def _get_button(self, name_raw):
-        name = re.sub(r"[\s_-]", "", name_raw).lower()
-        b = sdl2.SDL_GameControllerGetButtonFromString(name.encode('utf-8'))
-        if b == sdl2.SDL_CONTROLLER_BUTTON_INVALID:
-            raise ValueError("Invalid button name '{0}'.".format(name_raw))
-        return b
-
-    def _parse_mappings(self, _map):
-        out = {}
-        for label, mapping in _map.items():
-            buttons = []
-            axes = []
-            if isinstance(mapping, dict):
-                mapping = [{k: v} for k, v in mapping.items()]
-            elif isinstance(mapping, str):
-                mapping = [mapping]
-            for item in mapping:
-                if isinstance(item, dict):
-                    name, threshold = list(item.items())[0]
-                    axis_map = (self._get_axis(name), int(threshold * 32767))
-                    axes.append(axis_map)
-                else:
-                    buttons.append(self._get_button(item))
-            out[label] = {'buttons': buttons, 'axes': axes}
-        return out
-
-    def _reset_state(self):
-        self._button_state = {}
-        self._axis_state = {}
-        self._raw_trigger_data = []
-        for mapping in self._map.values():
-            for b in mapping['buttons']:
-                self._button_state[b] = 0
-            for axis, threshold in mapping['axes']:
-                self._axis_state[axis] = 0
+    def _timestamp(self):
+        # Since gamepad events have SDL timestamps, use SDL_GetTicks to mark the
+        # start of the collection loop.
+        return sdl2.SDL_GetTicks()
 
     def init(self):
-        """See :meth:`ResponseListener.init`.
+        # Initializes the listener before the response collection loop
+        # Flush the event queue and get the timestamp for collection start
+        flush()
+        self._lt_state = 0
+        self._rt_state = 0
+        self._raw_data = []
+        self._loop_start = self._timestamp()
+
+    def listen(self, q):
+        """See :meth:`BaseResponseListener.listen`.
 
         """
-        if self.pad:
-            self.pad.update()
-        self._reset_state()
-        if not len(self._map):
-            raise RuntimeError("No response map configured for the gamepad.")
+        if self._pad:
+            self._pad.update()
 
-    def listen(self, event_queue):
-        """See :meth:`ResponseListener.listen`.
-
-        """
-        trigger_update = False
-        for e in event_queue:
-            if e.type == sdl2.SDL_CONTROLLERBUTTONDOWN:
-                self._button_state[e.cbutton.button] = e.cbutton.state
-            elif e.type == sdl2.SDL_CONTROLLERBUTTONUP:
-                self._button_state[e.cbutton.button] = e.cbutton.state
-            elif e.type == sdl2.SDL_CONTROLLERAXISMOTION:
-                self._axis_state[e.caxis.axis] = e.caxis.value
+        # Gather trigger motion events per timestamp for the given controller
+        events = []
+        for e in q:
+            if e.type == sdl2.SDL_CONTROLLERAXISMOTION:
+                # If gamepad specified and event is from another controller, ignore it
+                if self._pad and e.caxis.which != self._pad.index:
+                    continue
+                # Process trigger motion events
                 if e.caxis.axis in TRIGGER_AXES:
-                    trigger_update = True
-
-        if trigger_update:
-            dat = TriggerData(
-                t = (self.evm.trial_time_ms - self._rc_start),
-                lt = self._axis_state[TRIGGER_LEFT],
-                rt = self._axis_state[TRIGGER_RIGHT]
-            )
-            self._raw_trigger_data.append(dat)
-
-        for label, mapping in self._map.items():
-            incomplete = False
-            for b in mapping['buttons']:
-                pressed = self._button_state[b]
-                if not pressed:
-                    incomplete = True
-                    break
-            if incomplete:
-                continue
-            for axis, threshold in mapping['axes']:
-                value = self._axis_state[axis]
-                if threshold < 0:
-                    valid = value <= threshold
-                else:
-                    valid = value >= threshold
-                if not valid:
-                    incomplete = True
-                    break
-            if not incomplete:
-                rt = (self.evm.trial_time_ms - self._rc_start)
-                return Response(label, rt)
-
-        if self.pad:
-            self.pad.update()
+                    # Update state of left/right triggers
+                    if e.caxis.axis == TRIGGER_LEFT:
+                        self._lt_state = e.caxis.value
+                    else:
+                        self._rt_state = e.caxis.value
+                    # Log current state, updating last event if timestamp unchanged
+                    t = e.caxis.timestamp - self._loop_start
+                    event = TriggerData(t, self._lt_state, self._rt_state)
+                    if len(events) and events[-1].timestamp == event.timestamp:
+                        events[-1] = event
+                    else:
+                        events.append(event)
+        
+        # Log raw trigger motion and check for response criteria
+        mapping = list(self._map.keys())
+        single = not 'both' in mapping
+        for e in events:
+            self._raw_data.append(e)
+            lresp = e.left >= self._threshold
+            rresp = e.right >= self._threshold
+            allow_resp = single or abs(e.left - e.right) >= self._threshold
+            if 'both' in mapping and lresp and rresp:
+                return (self._map['both'], e.timestamp)
+            if 'left' in mapping and lresp and allow_resp:
+                return (self._map['left'], e.timestamp)
+            if 'right' in mapping and rresp and allow_resp:
+                return (self._map['right'], e.timestamp)
 
     @property
-    def trigger_data(self):
-        return self._raw_trigger_data
-
-    @property
-    def response_map(self):
-        return self._user_map
-
-    @response_map.setter
-    def response_map(self, _map):
-        self._map = self._parse_mappings(_map)
-        self._user_map = _map
-
+    def raw_data(self):
+        return self._raw_data

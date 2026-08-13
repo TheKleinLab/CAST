@@ -6,6 +6,7 @@
 collect_demographics = True
 manual_demographics_collection = False
 manual_trial_generation = True
+max_trials_per_block = False
 run_practice_blocks = True
 multi_user = False
 view_distance = 57 # in centimeters, 57cm = 1 deg of visual angle per cm of screen
@@ -25,6 +26,7 @@ default_color = (0, 0, 0, 255)
 default_font_size = 0.5
 default_font_unit = 'deg'
 default_font_name = 'Hind-Medium'
+default_line_space = 1.9
 
 #########################################
 # EyeLink Settings
@@ -41,7 +43,6 @@ saccadic_motion_threshold = 0.15
 #########################################
 multi_session_project = False
 trials_per_block = 0
-blocks_per_experiment = 1
 table_defaults = {}
 conditions = ['endo', 'exo']
 default_condition = 'exo'
@@ -68,7 +69,6 @@ datafile_ext = ".txt"
 #########################################
 
 skip_demos = False
-max_trials_per_block = None
 
 # Fixation durations are drawn from a non-aging exponential distribution.
 # These parameters define the min/max/mean durations.

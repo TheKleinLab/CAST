@@ -7,16 +7,15 @@ import random
 import klibs
 from klibs.KLConstants import TK_MS, TIMEOUT
 from klibs import P
-from klibs.KLUtilities import deg_to_px, flush
+from klibs.KLUtilities import deg_to_px
 from klibs.KLEventQueue import pump, flush
 from klibs.KLUserInterface import any_key, ui_request, key_pressed, smart_sleep
 from klibs.KLGraphics import KLDraw as kld
 from klibs.KLGraphics import fill, flip, blit, clear, NumpySurface
+from klibs.KLText import add_text_style
 from klibs.KLExperiment import TrialException
 from klibs.KLCommunication import message
-from klibs.KLEventInterface import TrialEventTicket as ET
-from klibs.KLResponseCollectors import KeyPressResponse
-from klibs.KLTrialFactory import TrialIterator
+from klibs.KLResponseListeners import KeypressListener
 from klibs.KLTime import CountDown
 from klibs.KLAudio import AudioClip
 
@@ -26,7 +25,7 @@ import colorednoise
 
 from gamepad import gamepad_init, button_pressed
 from gamepad_usb import get_all_controllers
-from KLGamepad import GamepadResponse
+from KLGamepad import TriggerListener
 
 
 # Define colours for the experiment
@@ -97,18 +96,18 @@ class CASTRedux(klibs.Experiment):
             )
 
         # Font styles & text
-        self.txtm.add_style('incorrect', '0.5deg', RED)
-        self.txtm.add_style('block', '0.5deg', line_height='1.0')
-        self.anticipatory_msg = message("Too soon!", 'incorrect', blit_txt=False)
+        add_text_style('incorrect', '0.5deg', RED)
+        add_text_style('block', '0.5deg', line_space=2.6)
+        self.anticipatory_msg = message("Too soon!", 'incorrect')
             
         # Initialize feedback messages for practice block
         timeout_msg = message(
-            "Too slow! Please try to respond more quickly.", blit_txt=False
+            "Too slow! Please try to respond more quickly."
         )
         incorrect_msg = message(
             "Incorrect response!\n"
             "Please pull the trigger on the same side the middle fish is facing.",
-            blit_txt=False, align='center'
+            align='center'
         )
         
         self.feedback_msgs = {'incorrect': incorrect_msg, 'timeout': timeout_msg}
@@ -124,23 +123,20 @@ class CASTRedux(klibs.Experiment):
         # Set up Response Collector to get keypress responses
         if self.gamepad:
             print("Using gamepad")
-            self.rc.uses(GamepadResponse)
-            self.rc.gamepad_listener.pad = self.gamepad
-            self.rc.gamepad_listener.interrupts = True
-            self.rc.gamepad_listener.response_map = {
-                'left': {'Left Trigger': 0.5},
-                'right': {'Right Trigger': 0.5},
-            }
-            self.rc.gamepad_listener.record_triggers = True
+            self.resp_listener = TriggerListener(
+                mapping = {'Left': 'left', 'Right': 'right'},
+                gamepad = self.gamepad,
+                threshold = 0.5,
+                timeout = P.response_timeout / 1000
+            )
         else:
             print("Using keyboard")
-            self.rc.uses(KeyPressResponse)
-            self.rc.keypress_listener.interrupts = True
-            self.rc.keypress_listener.key_map = {'z': 'left', '/': 'right'}
-        self.rc.terminate_after = [P.response_timeout, TK_MS] # response period timeout
+            self.resp_listener = KeypressListener(
+                keymap = {'z': 'left', '/': 'right'},
+                timeout = P.response_timeout / 1000
+            )
 
         # Generate blocks of trials based on custom block structure
-        self.blocks, self.block_labels = self.generate_trials()
         self.last_block_type = None
         self.was_practicing = False
         self.block_number = 0
@@ -149,63 +145,7 @@ class CASTRedux(klibs.Experiment):
             self.general_demo()
 
 
-    def generate_trials(self):
-        # Since this experiment needs a specific sequence of blocks with two separate
-        # factor sets, we load in the trial structure from exp_structure.py here and
-        # use it to generate the blocks/trials for the experiment.
-        from exp_structure import structure
-
-        out = []
-        col_pad = {}
-        block_num = 0
-        block_header = "\n=== Block {0} ({1} trials{2}) ===\n"
-
-        block_set = []
-        block_labels = []
-        for block in structure:
-            if block.practice and not P.run_practice_blocks:
-                continue
-            block_labels.append(block.label)
-            tmp = block.get_trials()
-            if P.max_trials_per_block != None:
-                tmp = tmp[:P.max_trials_per_block]
-
-            # This next block is for printing out the generated blocks and trials for
-            # the experiment to a text file for double-checking the custom structure.
-            # It doesn't actually affect the block sequence of the study.
-            factors = block.factors
-            for f in factors:
-                if not f in col_pad.keys():
-                    col_pad[f] = len(f)
-                for level in block._factors._factors[f]:
-                    if len(str(level)) > col_pad[f]:
-                        col_pad[f] = len(str(level))
-            block_num += 1
-            practice = ", practice" if block.practice else ""
-            out.append(block_header.format(block_num, len(tmp), practice))
-            out.append(" ".join([f.ljust(col_pad[f]) for f in factors]))
-            out.append(" ".join(["-" * col_pad[f] for f in factors]))
-            for trial in tmp:
-                out.append(" ".join([str(trial[f]).ljust(col_pad[f]) for f in factors]))
-            out.append("")
-
-            trials = TrialIterator(tmp)
-            trials.practice = block.practice
-            block_set.append(trials)
-
-        P.blocks_per_experiment = len(block_set)
-
-        with open(os.path.join(P.local_dir, "trial_dump.txt"), "w") as f:
-            for line in out:
-                f.write(line + "\n")
-
-        return block_set, block_labels
-
-
     def block(self):
-
-        # Set block label attribute (eventually move into klibs itself)
-        setattr(self, 'block_label', self.block_labels[P.block_number - 1])
 
         # If this is the first block of a subtask, run its demo instructions
         if self.last_block_type != self.block_label:
@@ -223,7 +163,7 @@ class CASTRedux(klibs.Experiment):
                 "This is a practice block.\n"
                 "During this block you will be given feedback for your responses."
             )
-            block_msg = message(header, 'block', align="center", blit_txt=False)
+            block_msg = message(header, 'block', align="center")
         elif self.was_practicing or self.last_block_type != self.block_label:
             # If first non-practice block of subtest, show block start message
             header = "Block {0} of {1}\n".format(self.block_number, 4)
@@ -232,7 +172,7 @@ class CASTRedux(klibs.Experiment):
                 header += "brief flashes."
             else:
                 header += "arrows."
-            block_msg = message(header, 'block', align='center', blit_txt=False)
+            block_msg = message(header, 'block', align='center')
         self.last_block_type = self.block_label
         self.was_practicing = P.practicing
 
@@ -245,7 +185,7 @@ class CASTRedux(klibs.Experiment):
                 flip()
             flush()
             
-            start_msg = message("Press any button to start.", blit_txt=False)
+            start_msg = message("Press any button to start.")
             fill()
             blit(block_msg, 8, (P.screen_c[0], P.screen_y*0.4))
             blit(start_msg, 5, [P.screen_c[0], P.screen_y*0.7])
@@ -294,12 +234,9 @@ class CASTRedux(klibs.Experiment):
         
         # Add timecourse of events to EventManager
         self.soa = 200 if self.trial_type == "exo" else 1000
-        events = []
-        events.append([self.onset_delay, 'warning_on'])
-        events.append([self.onset_delay + 100 , 'warning_off'])
-        events.append([self.onset_delay + self.soa, 'target_on'])
-        for e in events:
-            self.evm.register_ticket(ET(e[1], e[0]))
+        self.evm.add_event('warning_on', self.onset_delay)
+        self.evm.add_event('warning_off', 100, after='warning_on')
+        self.evm.add_event('target_on', self.soa, after='warning_on')
 
         # Pause background noise and give participant a break every 24 trials
         if P.trial_number > 1 and ((P.trial_number - 1) % 24) == 0:
@@ -310,10 +247,6 @@ class CASTRedux(klibs.Experiment):
 
 
     def trial(self):
-
-        # Initialize trigger outcome variables
-        trig_max_l, trig_max_r = (0, 0)
-        trig_last_l, trig_last_r = (0, 0)
         
         # Before warning onset, show fixation
         while self.evm.before('warning_on'):
@@ -359,27 +292,24 @@ class CASTRedux(klibs.Experiment):
             for loc in self.flanker_locs:
                 blit(self.flanker, 5, loc)
         flip()
-        self.rc.collect()
+        response, rt = self.resp_listener.collect()
         
-        # Get response data and preprocess it before logging to database
+        # If using gamepad, get max/final pressure on non-response trigger during the
+        # response period as a measure of response competition
+        nonresp_max, trig_max_l, trig_max_r = (0, 0, 0)
+        nonresp_last, trig_last_l, trig_last_r = (0, 0, 0)
         if self.gamepad:
-            response, rt = self.rc.gamepad_listener.response()
-            for trig in self.rc.gamepad_listener.trigger_data:
+            for trig in self.resp_listener.raw_data:
                 if trig.left > trig_max_l:
                     trig_max_l = trig.left
                 if trig.right > trig_max_r:
                     trig_max_r = trig.right
-            if len(self.rc.gamepad_listener.trigger_data):
-                last_sample = self.rc.gamepad_listener.trigger_data[-1]
-                trig_last_l = last_sample.left
-                trig_last_r = last_sample.right
+                trig_last_l = trig.left
+                trig_last_r = trig.right
             nonresp_max = trig_max_r if response == 'left' else trig_max_l
             nonresp_last = trig_last_r if response == 'left' else trig_last_l
-        else:
-            response, rt = self.rc.keypress_listener.response()
-            nonresp_max = 0
-            nonresp_last = 0
-            
+
+        # Prepare response values for database
         accuracy = int(response == self.target_direction)
         if rt == TIMEOUT:
             response = 'NA'
@@ -401,7 +331,7 @@ class CASTRedux(klibs.Experiment):
         # Otherwise, clear screen immediately after response and wait for trial end
         else:
             msg = "Too slow!" if rt == 'NA' else str(int(rt))
-            feedback = message(msg, blit_txt=False)
+            feedback = message(msg)
 
             feedback_interval = CountDown(P.feedback_duration)
             while feedback_interval.counting():
@@ -433,7 +363,7 @@ class CASTRedux(klibs.Experiment):
 
     
     def clean_up(self):
-        msg = message("You're all done!  Press any button to exit.", blit_txt=False)
+        msg = message("You're all done!  Press any button to exit.")
         fill()
         blit(msg, 5, P.screen_c)
         flip()
@@ -480,7 +410,7 @@ class CASTRedux(klibs.Experiment):
     
     def check_anticipatory(self):
         # If any response before target onset, display error & recycle trial
-        q = pump(True)
+        q = pump()
         ui_request(queue=q)
         if key_pressed(queue=q) or button_pressed(q) or trigger_pressed(q):
             feedback_interval = CountDown(P.feedback_duration)
@@ -495,10 +425,8 @@ class CASTRedux(klibs.Experiment):
     def show_break_prompt(self):
         self.noise_mono.stop()
         self.noise_stereo.stop()
-        msg1 = message("Take a break!", blit_txt=False)
-        msg2 = message(
-            "Whenever you're ready, press any button to continue.", blit_txt=False
-        )
+        msg1 = message("Take a break!")
+        msg2 = message("Whenever you're ready, press any button to continue.")
         wait_msg(msg1, msg2, gamepad=self.gamepad)
         self.init_background_noise()
 
@@ -513,7 +441,7 @@ class CASTRedux(klibs.Experiment):
             msg_y = int(P.screen_y * 0.15)
             msgs = [msgs]
         for msg in msgs:
-            txt = message(msg, blit_txt=False, align="center")
+            txt = message(msg, align="center")
             blit(txt, 8, (msg_x, msg_y))
             msg_y += txt.height + half_space
     
@@ -530,14 +458,12 @@ class CASTRedux(klibs.Experiment):
     
     def sound_demo(self):
         self.init_background_noise()
-        msg1 = message(
-            "Use the following buttons to demo the alerting sounds:", blit_txt=False
-        )
+        msg1 = message("Use the following buttons to demo the alerting sounds:")
         msg2 = message(
             ("(X) - Play the high-intensity noise change\n"
              "(Y) - Play the same-intensity noise change\n"
              "(A) - Continue the experiment"),
-            blit_txt=False, align="left"
+            align="left"
         )
         fill()
         blit(msg1, 5, (int(P.screen_x / 2), int(P.screen_y * 0.4)))
@@ -548,7 +474,7 @@ class CASTRedux(klibs.Experiment):
         while not done:
             if self.gamepad:
                 self.gamepad.update()
-            q = pump(True)
+            q = pump()
 
             if button_or_key_pressed(q, "x"):
                 # Demo loud alerting signal
@@ -598,7 +524,7 @@ class CASTRedux(klibs.Experiment):
             ["Please try to respond quickly and accurately to the best of your ability.",
              ("Once you make a response, your reaction time will be shown\n"
              "briefly on the screen to let you know how you did.")],
-            [(message("359", blit_txt=False), P.screen_c)]
+            [(message("359"), P.screen_c)]
         )
         self.init_background_noise()
         self.show_demo_text(
@@ -669,7 +595,7 @@ class CASTRedux(klibs.Experiment):
         while not done:
             if self.gamepad:
                 self.gamepad.update()
-            q = pump(True)
+            q = pump()
             if button_or_key_pressed(q, "x"):
                 self.exo_demo()
                 done = True
@@ -728,7 +654,7 @@ class CASTRedux(klibs.Experiment):
         while not done:
             if self.gamepad:
                 self.gamepad.update()
-            q = pump(True)
+            q = pump()
             if button_or_key_pressed(q, "x"):
                 self.endo_demo()
                 done = True
@@ -786,7 +712,7 @@ def wait_for_input(gamepad=None):
     while not user_input:
         if gamepad:
             gamepad.update()
-        q = pump(True)
+        q = pump()
         ui_request(queue=q)
         for event in q:
             if event.type in valid_input:

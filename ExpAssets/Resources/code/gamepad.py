@@ -196,7 +196,7 @@ class Joystick(object):
         # Try opening the joystick
         error.SDL_ClearError()
         self._stick = jy.SDL_JoystickOpen(self._index)
-        if error.SDL_GetError != b"":
+        if not self._stick:
             e = "opening joystick {0} ({1})".format(self._index, self._info['name'])
             raise_sdl_err(e)
 
@@ -249,7 +249,7 @@ class GameController(object):
         # Try opening the gamepad
         error.SDL_ClearError()
         self._pad = gc.SDL_GameControllerOpen(self._index)
-        if error.SDL_GetError() != b"":
+        if not self._pad:
             e = "opening controller {0} ({1})".format(self._index, self._info['name'])
             raise_sdl_err(e)
 
@@ -330,12 +330,17 @@ class GameController(object):
     def name(self):
         return self._info["name"]
 
+    @property
+    def index(self):
+        return self._index
 
 
 def button_pressed(events, button=None, device=None, on_release=False):
-    button_events = [SDL_JOYBUTTONDOWN, SDL_CONTROLLERBUTTONDOWN]
+    c_event = SDL_CONTROLLERBUTTONDOWN
+    j_event = SDL_JOYBUTTONDOWN
     if on_release:
-        button_events = [SDL_JOYBUTTONUP, SDL_CONTROLLERBUTTONUP]
+        c_event = SDL_CONTROLLERBUTTONUP
+        j_event = SDL_JOYBUTTONUP
     if button:
         if _is_text(button):
             # TODO: Validation of button strings?
@@ -350,13 +355,15 @@ def button_pressed(events, button=None, device=None, on_release=False):
 
     pressed = False
     for e in events:
-        if e.type not in button_events:
+        if device != None and e.which != device.instance_id:
             continue
-        if device != None and e.cbutton.which != device.instance_id:
-            continue
-        if button == None or e.cbutton.button == button:
-            pressed = True
-            break
+        if e.type == c_event:
+            if button == None or e.cbutton.button == button:
+                pressed = True
+                break
+        elif e.type == j_event:
+            if button == None or e.jbutton.button == button:
+                pressed = True
+                break
     
     return pressed
-
