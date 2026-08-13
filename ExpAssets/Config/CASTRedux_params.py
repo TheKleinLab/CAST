@@ -26,6 +26,7 @@ default_color = (0, 0, 0, 255)
 default_font_size = 0.5
 default_font_unit = 'deg'
 default_font_name = 'Hind-Medium'
+default_line_space = 1.9
 
 #########################################
 # EyeLink Settings
