@@ -1,0 +1,15 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+klibs = {file = "https://github.com/a-hurst/klibs/releases/download/0.7.8b2/klibs-0.7.8b2.tar.gz"}
+pyusb = "*"
+libusb_package = "*"
+colorednoise = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"
