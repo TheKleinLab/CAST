@@ -330,6 +330,10 @@ class GameController(object):
     def name(self):
         return self._info["name"]
 
+    @property
+    def index(self):
+        return self._index
+
 
 def button_pressed(events, button=None, device=None, on_release=False):
     c_event = SDL_CONTROLLERBUTTONDOWN

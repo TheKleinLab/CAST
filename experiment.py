@@ -7,7 +7,7 @@ import random
 import klibs
 from klibs.KLConstants import TK_MS, TIMEOUT
 from klibs import P
-from klibs.KLUtilities import deg_to_px, flush
+from klibs.KLUtilities import deg_to_px
 from klibs.KLEventQueue import pump, flush
 from klibs.KLUserInterface import any_key, ui_request, key_pressed, smart_sleep
 from klibs.KLGraphics import KLDraw as kld
@@ -15,7 +15,7 @@ from klibs.KLGraphics import fill, flip, blit, clear, NumpySurface
 from klibs.KLText import add_text_style
 from klibs.KLExperiment import TrialException
 from klibs.KLCommunication import message
-from klibs.KLResponseCollectors import KeyPressResponse
+from klibs.KLResponseListeners import KeypressListener
 from klibs.KLTime import CountDown
 from klibs.KLAudio import AudioClip
 
@@ -25,7 +25,7 @@ import colorednoise
 
 from gamepad import gamepad_init, button_pressed
 from gamepad_usb import get_all_controllers
-from KLGamepad import GamepadResponse
+from KLGamepad import TriggerListener
 
 
 # Define colours for the experiment
@@ -123,20 +123,18 @@ class CASTRedux(klibs.Experiment):
         # Set up Response Collector to get keypress responses
         if self.gamepad:
             print("Using gamepad")
-            self.rc.uses(GamepadResponse)
-            self.rc.gamepad_listener.pad = self.gamepad
-            self.rc.gamepad_listener.interrupts = True
-            self.rc.gamepad_listener.response_map = {
-                'left': {'Left Trigger': 0.5},
-                'right': {'Right Trigger': 0.5},
-            }
-            self.rc.gamepad_listener.record_triggers = True
+            self.resp_listener = TriggerListener(
+                mapping = {'Left': 'left', 'Right': 'right'},
+                gamepad = self.gamepad,
+                threshold = 0.5,
+                timeout = P.response_timeout / 1000
+            )
         else:
             print("Using keyboard")
-            self.rc.uses(KeyPressResponse)
-            self.rc.keypress_listener.interrupts = True
-            self.rc.keypress_listener.key_map = {'z': 'left', '/': 'right'}
-        self.rc.terminate_after = [P.response_timeout, TK_MS] # response period timeout
+            self.resp_listener = KeypressListener(
+                keymap = {'z': 'left', '/': 'right'},
+                timeout = P.response_timeout / 1000
+            )
 
         # Generate blocks of trials based on custom block structure
         self.last_block_type = None
@@ -249,10 +247,6 @@ class CASTRedux(klibs.Experiment):
 
 
     def trial(self):
-
-        # Initialize trigger outcome variables
-        trig_max_l, trig_max_r = (0, 0)
-        trig_last_l, trig_last_r = (0, 0)
         
         # Before warning onset, show fixation
         while self.evm.before('warning_on'):
@@ -298,27 +292,24 @@ class CASTRedux(klibs.Experiment):
             for loc in self.flanker_locs:
                 blit(self.flanker, 5, loc)
         flip()
-        self.rc.collect()
+        response, rt = self.resp_listener.collect()
         
-        # Get response data and preprocess it before logging to database
+        # If using gamepad, get max/final pressure on non-response trigger during the
+        # response period as a measure of response competition
+        nonresp_max, trig_max_l, trig_max_r = (0, 0, 0)
+        nonresp_last, trig_last_l, trig_last_r = (0, 0, 0)
         if self.gamepad:
-            response, rt = self.rc.gamepad_listener.response()
-            for trig in self.rc.gamepad_listener.trigger_data:
+            for trig in self.resp_listener.raw_data:
                 if trig.left > trig_max_l:
                     trig_max_l = trig.left
                 if trig.right > trig_max_r:
                     trig_max_r = trig.right
-            if len(self.rc.gamepad_listener.trigger_data):
-                last_sample = self.rc.gamepad_listener.trigger_data[-1]
-                trig_last_l = last_sample.left
-                trig_last_r = last_sample.right
+                trig_last_l = trig.left
+                trig_last_r = trig.right
             nonresp_max = trig_max_r if response == 'left' else trig_max_l
             nonresp_last = trig_last_r if response == 'left' else trig_last_l
-        else:
-            response, rt = self.rc.keypress_listener.response()
-            nonresp_max = 0
-            nonresp_last = 0
-            
+
+        # Prepare response values for database
         accuracy = int(response == self.target_direction)
         if rt == TIMEOUT:
             response = 'NA'
